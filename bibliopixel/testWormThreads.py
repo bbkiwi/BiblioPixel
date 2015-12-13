@@ -171,7 +171,8 @@ led.waitForUpdate()
 
 # NOTE if stop updateThreads while animations still running
 #  havoc!
-led.stopThreads()
+#  test new routine
+led.stopUpdateThreads()
 
 
 print 'after stopped updateThread'
