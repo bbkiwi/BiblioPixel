@@ -106,7 +106,7 @@ class LEDBase(object):
         except IndexError:
             pass
 
-    def stopThreads(self):
+    def stopUpdateThreads(self):
         if self._threadedUpdate:
             for d in self.driver:
                 d._thread.stop()
