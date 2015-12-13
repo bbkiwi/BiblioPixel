@@ -26,6 +26,7 @@ class updateThread(threading.Thread):
 
     def stop(self):
         self._stop.set()
+        self._wait.set()
 
     def stopped(self):
         return self._stop.isSet()
@@ -34,8 +35,10 @@ class updateThread(threading.Thread):
         return self._wait.isSet()
 
     def run(self):
-        while not self.stopped():
+        while True:
             self._wait.wait()
+            if self.stopped():
+                break
             self._driver._update(self._data)
             self._data = []
             self._wait.clear()
@@ -102,6 +105,12 @@ class LEDBase(object):
                 self.buffer[pixel*3:(pixel*3)+3] = color
         except IndexError:
             pass
+
+    def stopThreads(self):
+        if self._threadedUpdate:
+            for d in self.driver:
+                d._thread.stop()
+                d._thread.join()  # if want thread at this point
 
     def waitForUpdate(self):
         if self._threadedUpdate:
