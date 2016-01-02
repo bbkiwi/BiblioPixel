@@ -13,7 +13,7 @@ import log
 class DriverVisualizer(DriverNetwork):
     """Main driver for Visualizer UI (for testing)"""
 
-    def __init__(self, num = 0, width = 0, height = 0, pixelSize = 15, port = 1618, stayTop = False):
+    def __init__(self, num = 0, width = 0, height = 0, pixelSize = 15, port = 1618, stayTop = False, maxWindowWidth=512):
         super(DriverVisualizer, self).__init__(num, width, height, host = "localhost", port = port)
 
         allip = False
@@ -56,7 +56,7 @@ class DriverVisualizer(DriverNetwork):
             else:
                 top = ""
             
-            command = "{0} {1} --width {2} --height {3} --pixelsize {4} --port {5} {6} {7} {8}".format(exe_string, script, str(self.width), str(self.height), str(pixelSize), str(port), ip, top, suffix)
+            command = "{0} {1} --width {2} --height {3} --pixelsize {4} --maxwindowwidth {9} --port {5} {6} {7} {8}".format(exe_string, script, str(self.width), str(self.height), str(pixelSize), str(port), ip, top, suffix, maxWindowWidth)
             #print command
             log.logger.debug(command)
             os.system(command)
@@ -112,6 +112,13 @@ MANIFEST = [
                 "type":"bool",
                 "default":False,
                 "help":"Force Visualizer UI to stay on top of all other windows.",
+            },
+                        {
+                "id":"maxWindowWidth",
+                "label":"Max Window Width",
+                "type":"int",
+                "default":512,
+                "help":"Max Window Width.",
             }]
         }
 ]

@@ -10,8 +10,7 @@ from util import d
 
 import threading
 
-class animThread(threading.Thread):
-
+class animThread(threading.Thread): 
     def __init__(self, anim, args):
         super(animThread, self).__init__()
         self.setDaemon(True)
@@ -19,9 +18,9 @@ class animThread(threading.Thread):
         self._args = args
 
     def run(self):
-        log.logger.debug("Starting thread...")
+        log.logger.info("Starting thread...")
         self._anim._run(**self._args)
-        log.logger.debug("Thread Complete")
+        log.logger.info("Thread Complete")
 
 class BaseAnimation(object):
     def __init__(self, led):
@@ -54,7 +53,6 @@ class BaseAnimation(object):
     def stopThread(self, wait = False):
         if self._thread:
             self._stopEvent.set()
-
             if wait:
                 self._thread.join()
 
@@ -130,7 +128,7 @@ class BaseAnimation(object):
                 totalTime = stepTime + updateTime
 
             if self._led._threadedUpdate:
-                log.logger.debug("Frame: {}ms / Update Max: {}ms".format(stepTime, updateTime))
+                log.logger.debug("Id {} Frame: {}ms / Update Max: {}ms".format(id(self), stepTime, updateTime))
             else:
                 log.logger.debug("{}ms/{}fps / Frame: {}ms / Update: {}ms".format(totalTime, int(1000 / max(totalTime,1)), stepTime, updateTime))
 
@@ -162,7 +160,6 @@ class BaseAnimation(object):
             for p in run_params:
                 if p in l:
                     args[p] = l[p]
-
             self._thread = animThread(self, args)
             self._thread.start()
             if joinThread:
@@ -465,3 +462,83 @@ class MatrixCalibrationTest(BaseMatrixAnim):
         self.animComplete = (i == (self.width-1))
 
         self._step += 1
+	
+class MasterAnimation(BaseMatrixAnim):
+    """
+    Takes copies of fake leds, combines using heights and mixing to fill and update
+    a led to run concurrent animations using threading
+    """
+    def __init__(self, led, animcopies, runtime=10, start=0, end=-1):
+        super(MasterAnimation, self).__init__(led, start, end)
+        if not isinstance(animcopies, list):
+            animcopies = [animcopies]
+        self._animcopies = animcopies
+        self._ledcopies = [a._led for a, f in animcopies]
+        self._runtime = runtime
+        self._idlelist = []
+        self.timedata = [[] for _  in animcopies] # [[]] * k NOT define k different lists!
+        self._led.pixheights = [0] * self._led.numLEDs
+
+    def preRun(self, amt=1): 
+        super(MasterAnimation, self).preRun(amt)
+        self.starttime = time.time()
+        for w, f in self._animcopies:
+            w.run(fps=f, max_steps=self._runtime * f, threaded = True)
+        #print "In preRUN THREADS: " + ",".join([re.sub('<class |,|bibliopixel.\w*.|>', '', str(s.__class__)) for s in threading.enumerate()])
+        	
+    def preStep(self, amt=1):
+        self.animComplete = all([a.stopped() for a, f in self._animcopies])
+        #print 'prestep {}'.format(self._step)
+        # only step the master thread when something from ledcopies
+        #  has been done i.e. its event _wait must be false (I THINK)
+        # TODO is this good code???? or is there a better way to block
+        self._idlelist = [True] # to insure goes thru while loop at least once
+        while all(self._idlelist):
+            self._idlelist = [not ledcopy.driver[0]._updatenow.isSet() for ledcopy in self._ledcopies]
+            if self._stopEvent.isSet() | self.animComplete:
+                self.animComplete = True
+                #print 'breaking out'
+                break
+#        
+    def postStep(self, amt=1):
+        # clear the ones found in preStep
+        activewormind = [i for i, x in enumerate(self._idlelist) if x == False]
+        [self._ledcopies[i].driver[0]._updatenow.clear() for i in activewormind]
+ 
+    def step(self, amt=1):
+        """
+        combines the buffers from the slave led's
+        which then gets sent to led via update
+        """
+        # For checking if all the animations have their frames looked at
+        #activewormind = [i for i, x in enumerate(self._idlelist) if x == False]
+        #print "Worm {} at {:5g}".format(activewormind, 1000*(time.time() - starttime))
+        # save times activated for each worm         
+        [self.timedata[i].append(1000*(time.time() - self.starttime)) for i, x in enumerate(self._idlelist) if x == False]
+        
+        #self._led.buffer = [0] * 480
+        self._led.pixheights = [-10000] * self._led.numLEDs
+        #print type(self._led.buffer)
+        for ledcopy in self._ledcopies:
+            # self._led.buffer = map(ixor, self._led.buffer, ledcopy.buffer)
+            # use pixheights but assume all buffers same size
+            # print ledcopy.driver[0].pixheights
+            for pixind, pix in enumerate(ledcopy.driver[0].pixmap):
+            #for ledcopy in self._ledcopies:
+                if self._led.pixheights[pix] == ledcopy.driver[0].pixheights[pixind]:
+                    for i in range(3):
+                        self._led.buffer[3*pix + i] ^= ledcopy.buffer[3*pixind + i]
+                elif self._led.pixheights[pix] < ledcopy.driver[0].pixheights[pixind]:
+                    for i in range(3):
+                        self._led.buffer[3*pix + i] = ledcopy.buffer[3*pixind + i]
+                        self._led.pixheights[pix] = ledcopy.driver[0].pixheights[pixind]    
+        self._step += 1
+        self.animComplete = all([a.stopped() for a, f in self._animcopies])
+
+        
+    def run(self, amt = 1, fps=None, sleep=None, max_steps = 0, untilComplete = True, max_cycles = 0, threaded = True, joinThread = False, callback=None):
+        # self.fps = fps
+        # self.untilComplete = untilComplete
+        super(MasterAnimation, self).run(amt = 1, fps=fps, sleep=None, max_steps = max_steps, untilComplete = untilComplete, max_cycles = 0, threaded = True, joinThread = joinThread, callback=callback)
+   
+

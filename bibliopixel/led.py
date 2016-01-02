@@ -12,8 +12,8 @@ class updateThread(threading.Thread):
         super(updateThread, self).__init__()
         self.setDaemon(True)
         self._stop = threading.Event()
-        self._wait = threading.Event()
-        self._reading = threading.Event()
+        self._wait = threading.Event() # set when ready and sending data to update driver
+        self._reading = threading.Event() # set when ready and during read data via setData
         self._reading.set()
         self._data = []
         self._driver = driver
@@ -106,6 +106,8 @@ class LEDBase(object):
         except IndexError:
             pass
 
+    # NOTE this stops the thread associated with the driver associated with the led
+    #  so if a later led has the same drivers this will stop those treads
     def stopUpdateThreads(self):
         if self._threadedUpdate:
             for d in self.driver:

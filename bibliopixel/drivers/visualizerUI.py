@@ -16,8 +16,9 @@ import log
 from network_receiver import ThreadedDataServer, ThreadedDataHandler
 
 class VisualizerUI:
-    def __init__(self, width, height, pixelSize, top = False):
-        self._maxWindowWidth = 512
+    def __init__(self, width, height, pixelSize, top = False, maxWindowWidth=512):
+        #self._maxWindowWidth = 512
+        self._maxWindowWidth = maxWindowWidth
 
         self._master = Tk()
         self._q = Queue.Queue()
@@ -189,7 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--top', help='Keep the visualizer on top of all other windows', action='store_true')
     parser.add_argument('--port', help='Advanced: TCP port to listen on (default: 1618)', default=1618, type=int)
     parser.add_argument('--allip', help='Visualizer will listen for data on all network connections', action='store_true')
-    
+    parser.add_argument('--maxwindowwidth', help='Maximum Window Width of Visualizer', default=512, type=int)
     args = vars(parser.parse_args())
 
     width = args['width']
@@ -198,8 +199,9 @@ if __name__ == '__main__':
     top = args['top']
     port = args['port']
     allip = args['allip']
+    maxWindowWidth = args['maxwindowwidth']
 
-    ui = VisualizerUI(width, height, pixelSize, top)
+    ui = VisualizerUI(width, height, pixelSize, top, maxWindowWidth)
 
     ip = 'localhost'
     if allip:
