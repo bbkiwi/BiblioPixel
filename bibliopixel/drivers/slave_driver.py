@@ -9,6 +9,7 @@ class DriverSlave(DriverBase):
     
     def __init__(self, num, pixmap=None, pixheights=None):
         """
+        num is number of pixels
         pixmap is list of size num with values in range of pixels in master LED
           if None specified becomes range(num)
         pixheights is list of size num with heights
@@ -53,12 +54,9 @@ class DriverSlave(DriverBase):
 
     #Push new data to strand
     def update(self, data):
-        try:
-            self._thread
-        except AttributeError as e:
-            print 'slave drivers must be run as threaded'
         if self._thread == None:
-            raise NameError('slave drivers must be run as threaded')
+            self._updatenow.set()   
+        else:
+            raise NameError('slave drivers should be run as NOT threaded')
             quit()
-            
-        self._updatenow.set()            
+           
