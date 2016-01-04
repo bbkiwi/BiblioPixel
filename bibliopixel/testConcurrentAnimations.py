@@ -5,7 +5,7 @@ Runs a number of wave animations (threaded) so they are concurrent
 """
 # import base classes and driver
 from bibliopixel import LEDStrip, LEDMatrix
-# from bibliopixel.drivers.LPD8806 import DriverLPD8806, ChannelOrder
+from bibliopixel.drivers.LPD8806 import DriverLPD8806, ChannelOrder
 from bibliopixel.drivers.visualizer import DriverVisualizer, ChannelOrder
 from bibliopixel.drivers.slave_driver import DriverSlave
 # import colors
@@ -24,8 +24,15 @@ import sys
 
 from bibliopixel.wormanimclass import pathgen
 # set up led with it's driver for the MasterAnimation
-drivermaster = DriverVisualizer(160, pixelSize=62, stayTop=False, maxWindowWidth=1024)
-ledmaster = LEDMatrix(drivermaster, width=16, height=10, threadedUpdate=False)
+try: # to use visualizer but if fails
+    drivermaster = DriverVisualizer(160, pixelSize=62, stayTop=False, maxWindowWidth=1024)
+    ledmaster = LEDMatrix(drivermaster, width=16, height=10, threadedUpdate=False)
+except:
+    # assume on my pi and connect to strip, however a process of visualizerUI.py will have
+    # been started and will fail
+    drivermaster = DriverLPD8806(160)
+    ledmaster = LEDMatrix(drivermaster, width=16, height=10, threadedUpdate=False)
+
 
 # Set up animations that will run concurrently
 # Wave arguments
@@ -86,6 +93,7 @@ if __name__ == '__main__':
         plt.axis([ax[0]-delx, ax[1]+delx, ax[2]-1, ax[3]+1]) 
         plt.title("Master Animation Step Count {}".format(masteranimation._step))
     except ImportError:
+        print 'Wasnt able to plot as matplotlib not available'
         pass
     
 MANIFEST = [
