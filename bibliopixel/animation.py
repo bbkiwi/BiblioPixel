@@ -42,6 +42,9 @@ class BaseAnimation(object):
     def preRun(self, amt=1):
         self._led.all_off()
 
+    def postRun(self):
+        self._led.resetMasterBrightness()
+
     def preStep(self, amt=1):
         pass
 
@@ -144,6 +147,8 @@ class BaseAnimation(object):
                 else:
                     time.sleep(t)
             cur_step += 1
+
+        self.postRun()
 
         if self._callback:
             self._callback(self)
