@@ -103,7 +103,7 @@ class LEDBase(object):
         return self.__exit__(None, None, None)
 
     def _get_base(self, pixel):
-        if(pixel < 0 or pixel > self.lastIndex):
+        if(pixel < 0 or pixel > self._last_i):
             return (0,0,0) #don't go out of bounds
         return (self.unscaledbuffer[pixel*3 + 0],
                 self.unscaledbuffer[pixel*3 + 1],
@@ -116,7 +116,7 @@ class LEDBase(object):
         otherwise same as unscaled buffer
         """
         # TODO could modifiy to return scaled in all cases
-        if(pixel < 0 or pixel > self.lastIndex):
+        if(pixel < 0 or pixel > self._last_i):
             return (0, 0, 0)  # don't go out of bounds
         return (self.buffer[pixel*3 + 0],
                 self.buffer[pixel*3 + 1],
@@ -254,8 +254,8 @@ class LEDBase(object):
         """Fill the entire strip with RGB color tuple"""
         if start < 0:
             start = 0
-        if end < 0 or end > self.lastIndex:
-            end = self.lastIndex
+        if end < 0 or end > self._last_i:
+            end = self._last_i
         for led in range(start, end + 1): #since 0-index include end in range
             self._set_base(led, color)
 
@@ -318,6 +318,15 @@ class LEDStrip(LEDBase):
         """Set single pixel off"""
         self.set(pixel, (0, 0, 0))
 
+    # Fill the strand (or a subset) with a single color using a Color object
+    def fill(self, color, start=0, end=-1):
+        """Fill the entire strip with RGB color tuple"""
+        if start < 0:
+            start = 0
+        if end < 0 or end > self.lastIndex:
+            end = self.lastIndex
+        for led in range(start, end + 1):  # since 0-index include end in range
+            self.set(led, color)
 class MatrixRotation:
     ROTATE_0 = 0   #no rotation
     ROTATE_90 = 3  #rotate 90 degrees
