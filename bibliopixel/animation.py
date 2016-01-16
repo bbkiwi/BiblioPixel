@@ -8,6 +8,7 @@ import colors
 
 from util import d
 
+import math
 import threading
 
 
@@ -83,11 +84,11 @@ class BaseAnimation(object):
         else:
             return True
 
-    def _run(self, amt, fps, sleep, max_steps, untilComplete, max_cycles):
+    def _run(self, amt, fps, sleep, max_steps, untilComplete, max_cycles, updateWithPush=True):
         self.preRun()
-        # calculate sleep time base on desired Frames per Second
+        # calculate sleep time (ms) based on desired Frames per Second
         if fps is not None:
-            sleep = int(1000 / fps)
+            sleep = 1000.0 / fps
 
         initSleep = sleep
 
@@ -95,7 +96,8 @@ class BaseAnimation(object):
         cur_step = 0
         cycle_count = 0
         self.animComplete = False
-
+        
+        startupdate = self._msTime() # just to get started
         while not self._stopEvent.isSet() and (
                  (max_steps == 0 and not untilComplete) or
                  (max_steps > 0 and cur_step < max_steps) or
@@ -118,8 +120,44 @@ class BaseAnimation(object):
 
             self._led._frameGenTime = int(mid - start)
             self._led._frameTotalTime = sleep
+            
+            # sleep here so update starts on  integer multiple of sleep time
+            #   since the time counter began
+            #   this will help synchronize concurrent animations
+            if sleep:
+                # log.logger.warning("min - startupdate %dms  but sleep =  %dms!" % (mid - startupdate, sleep))
+                if mid - startupdate < sleep: # startupdate previous iteration
+                    tsleep = sleep - (mid - startupdate)
+                    # apply correction to end on integer multiple
+                    nextstartupdate = startupdate + sleep
+                    framesTimeBegan = nextstartupdate / sleep
+                    framecorrection = round(framesTimeBegan) - framesTimeBegan
+                    tsleep = tsleep + framecorrection * sleep
+                    log.logger.info("time correction used %f ms   " % (framecorrection * sleep))
+                    # subtle correction to compensate for time of above calc
+                    endcalc = self._msTime()
+                    if (endcalc - mid) < tsleep:
+                        if self._threaded:
+                            self._stopEvent.wait(tsleep / 1000.0)
+                        else:
+                            time.sleep(tsleep / 1000.0)        
+#                    # might be able to skip corrections and use this directly                     
+#                    if self._threaded:
+#                        self._stopEvent.wait(tsleep / 1000.0)
+#                    else:
+#                        time.sleep(tsleep / 1000.0)        
+#                
+                else:
+                    diff = (self._msTime() - self._timeRef)
+                    log.logger.warning("Frame-time of %dms set, but took %dms!" % (sleep, diff))
+                          
+            startupdate = self._msTime()
 
-            self._led.update()
+            if updateWithPush:
+                self._led.update()
+            else:
+                self._led._updatenow.set()   # signals masterAnimation to act
+                
             now = self._msTime()
 
             if self.animComplete and max_cycles > 0:
@@ -132,7 +170,7 @@ class BaseAnimation(object):
                 updateTime = int(self._led.lastThreadedUpdate())
                 totalTime = updateTime
             else:
-                updateTime = int(now - mid)
+                updateTime = int(now - startupdate)
                 totalTime = stepTime + updateTime
 
             if self._led._threadedUpdate:
@@ -140,15 +178,6 @@ class BaseAnimation(object):
             else:
                 log.logger.debug("{}ms/{}fps / Frame: {}ms / Update: {}ms".format(totalTime, int(1000 / max(totalTime,1)), stepTime, updateTime))
 
-            if sleep:
-                diff = (self._msTime() - self._timeRef)
-                t = max(0, (sleep - diff) / 1000.0)
-                if t == 0:
-                    log.logger.warning("Frame-time of %dms set, but took %dms!" % (sleep, diff))
-                if self._threaded:
-                    self._stopEvent.wait(t)
-                else:
-                    time.sleep(t)
             cur_step += 1
 
         self.animComplete = True
@@ -157,7 +186,7 @@ class BaseAnimation(object):
         if self._callback:
             self._callback(self)
 
-    def run(self, amt = 1, fps=None, sleep=None, max_steps = 0, untilComplete = False, max_cycles = 0, threaded = False, joinThread = False, callback=None):
+    def run(self, amt = 1, fps=None, sleep=None, max_steps = 0, untilComplete = False, max_cycles = 0, threaded = False, joinThread = False, callback=None, updateWithPush=True):
 
         self._threaded = threaded
         if self._threaded:
@@ -167,7 +196,7 @@ class BaseAnimation(object):
         if self._threaded:
             args = {}
             l = locals()
-            run_params = ["amt", "fps", "sleep", "max_steps", "untilComplete", "max_cycles"]
+            run_params = ["amt", "fps", "sleep", "max_steps", "untilComplete", "max_cycles", "updateWithPush"]
             for p in run_params:
                 if p in l:
                     args[p] = l[p]
@@ -176,7 +205,7 @@ class BaseAnimation(object):
             if joinThread:
                 self._thread.join()
         else:
-            self._run(amt, fps, sleep, max_steps, untilComplete, max_cycles)
+            self._run(amt, fps, sleep, max_steps, untilComplete, max_cycles, updateWithPush)
 
     RUN_PARAMS = [{
                 "id": "amt",
@@ -478,23 +507,120 @@ class MatrixCalibrationTest(BaseMatrixAnim):
 
 class MasterAnimation(BaseMatrixAnim):
     """
-    Takes copies of fake leds, combines using heights and mixing to fill and update
-    a led to run concurrent animations using threading
+    NOTE this version requires a modified BaseAnimation class
+    ma = MasterAnimation(ledmaster, animTracks, runtime=1)
+    Runs a number of animation tracks concurrently. 
+    animTracks is list of tuples
+          (animation with unique led, pixmap, pixheights, fps)
+    All the animations in animTracks will run for runtime. Each of the
+    animations, a, is mapped into ledmaster by its pixmap and conflicts 
+    resolved by pixheights.
+    For each tuple in animTracks consists of:
+       animation e.g. a = Wave(LEDStrip(Driver...(num ..), ...)
+           All of the animations in animTracks must have distinct instances
+               of LEDStrip, LEDMatrix, ...!
+           TODO fix this!
+           Any Driver should be ok. Specifying threaded=False is recommended
+              but it probably makes no difference. The updating is very
+              fast as it is only signally MasterAnimation to act. 
+       pixmap is list of size a._led.numLEDs of pixel indices of ledmaster
+         if pixmap is None, it will be replaced by range(a._led.numLEDs)
+       pixheights is list of size a._led.numLEDs of floats. Highest pixels
+         are the ones that display. In case of ties, xor is used
+         if pixheights is one value, pixheights is replaced by 
+         the constant list. If pixheights is None the constant is 0
+       fps a int or None for frames per second for this animation
+          
+    ma.run(fps=None, threaded=False) will run all the animiation tracks
+       concurrently and wait till the runtime is over.       
+    if fps is set faster frames from the tracks will be skipped. 
+   
+    if threaded is True is will not wait. 
+    To wait use:
+    while not masteranimation.stopped():
+        pass
     """
-    def __init__(self, led, animcopies, runtime=10, start=0, end=-1):
+    def __init__(self, led, animTracks, runtime=10, start=0, end=-1):
         super(MasterAnimation, self).__init__(led, start, end)
-        if not isinstance(animcopies, list):
-            animcopies = [animcopies]
-        self._animcopies = animcopies
-        self._ledcopies = [a._led for a, f in animcopies]
+        
+        # Early idea but don't like breaking _led 
+        # XXX a replacement update function for animations in animTracks
+        # XXXdef __update(self):
+        # XXX   self._updatenow.set() 
+           
+        if not isinstance(animTracks, list):
+            animTracks = [animTracks]
+        self._animTracks = animTracks
+        # modify the update methods of led and add threading Event atribute
+        self._ledcopies = []
+        #XXX self._restoreupdates = []
+        
+        # for all animations' leds add attributes: _updatenow, pixmap, pixheights
+        ledcheck = set()
+        self.ledsunique = True
+        for a, pixmap, pixheights, f in self._animTracks:
+            # check that all the a have distinct ._led
+            # TODO make distince copies (deepcopy didn't work, if I could just find the
+            #   the defining arguments could make new instance)
+            if id(a._led) in ledcheck:
+                self.ledsunique = False
+                # TODO might only want a warning
+                raise RuntimeError('LEDs are not unique for the concurrent animations')
+            else:
+                ledcheck.add(id(a._led))
+                
+            a._led._updatenow = threading.Event()
+            
+            #XXXself._restoreupdates.append(a._led.update)
+            #XXXa._led.update = new.instancemethod(__update, a._led, None)
+            
+            if pixmap is None and not hasattr(a._led, 'pixmap'):
+                a._led.pixmap = range(a._led.numLEDs)
+            elif pixmap is not None:
+                a._led.pixmap = pixmap  
+                
+            try:          
+                if len(a._led.pixmap) != a._led.numLEDs:
+                    raise TypeError()                  
+            except TypeError:
+                err = 'pixmap must be list same size as LEDs'
+                log.logger.error(err)
+                raise TypeError
+                       
+            if pixheights is None and not hasattr(a._led, 'pixheights'):
+                a._led.pixheights = None
+            elif pixheights is not None:
+                a._led.pixheights = pixheights 
+                
+            err = 'pixheights must be list of values same size as LEDs'        
+            if a._led.pixheights == None:
+                a._led.pixheights = [0] * a._led.numLEDs
+            elif isinstance(a._led.pixheights ,list):
+                try:
+                    if len(a._led.pixheights) != a._led.numLEDs:
+                        raise TypeError()                  
+                except TypeError:
+                    log.logger.error(err)
+                    raise TypeError
+            else:
+                try:
+                    a._led.pixheights = [float(a._led.pixheights)] * a._led.numLEDs
+                except ValueError:
+                    err = 'pixheights must be list of values same size as LEDs'
+                    log.logger.error(err)
+                    raise ValueError            
+                
+            self._ledcopies.append(a._led)
+            
         self._runtime = runtime
         self._idlelist = []
-        self.timedata = [[] for _  in animcopies] # [[]] * k NOT define k different lists!
+        self.timedata = [[] for _  in self._animTracks] # [[]] * k NOT define k different lists!
         self._led.pixheights = [0] * self._led.numLEDs
+        
 
     #overriding to handle all the animations
     def stopThread(self, wait = False):
-        for w, f in self._animcopies:
+        for w, pm, ph, f in self._animTracks:
             w._stopEvent.set()
         super(MasterAnimation, self).stopThread(wait)
 
@@ -502,26 +628,26 @@ class MasterAnimation(BaseMatrixAnim):
     def preRun(self, amt=1):
         super(MasterAnimation, self).preRun(amt)
         self.starttime = time.time()
-        for w, f in self._animcopies:
-            w.run(fps=f, max_steps=self._runtime * f, threaded = True)
+        for w, pm, ph, f in self._animTracks:
+            w.run(fps=f, max_steps=self._runtime * f, threaded = True, updateWithPush=False)
         #print "In preRUN THREADS: " + ",".join([re.sub('<class |,|bibliopixel.\w*.|>', '', str(s.__class__)) for s in threading.enumerate()])
 
     def preStep(self, amt=1):
         # only step the master thread when something from ledcopies
         self._idlelist = [True] # to insure goes thru while loop at least once
         while all(self._idlelist):
-            self._idlelist = [not ledcopy.driver[0]._updatenow.isSet() for ledcopy in self._ledcopies]
-            if self._stopEvent.isSet() | all([a.stopped() for a, f in self._animcopies]):
+            self._idlelist = [not ledcopy._updatenow.isSet() for ledcopy in self._ledcopies]
+            if self._stopEvent.isSet() | all([a.stopped() for a, pm, ph, f in self._animTracks]):
                 self.animComplete = True
-                #print all([a.stopped() for a, f in self._animcopies])
+                #print all([a.stopped() for a, f in self._animTracks])
                 #print 'breaking out'
                 break
 #
     def postStep(self, amt=1):
         # clear the ones found in preStep
-        activewormind = [i for i, x in enumerate(self._idlelist) if x == False]
-        [self._ledcopies[i].driver[0]._updatenow.clear() for i in activewormind]
-        #self.animComplete = all([a.stopped() for a, f in self._animcopies])
+        activeanimind = [i for i, x in enumerate(self._idlelist) if x == False]
+        [self._ledcopies[i]._updatenow.clear() for i in activeanimind]
+        #self.animComplete = all([a.stopped() for a, f in self._animTracks])
         #print "In postStep animComplete {}".format(self.animComplete)
 
     def step(self, amt=1):
@@ -532,31 +658,25 @@ class MasterAnimation(BaseMatrixAnim):
         def xortuple(a, b):
             return tuple(a[i] ^ b[i] for i in range(len(a)))
         # For checking if all the animations have their frames looked at
-        #activewormind = [i for i, x in enumerate(self._idlelist) if x == False]
-        #print "Worm {} at {:5g}".format(activewormind, 1000*(time.time() - starttime))
-        # save times activated for each worm
+        #activeanimind = [i for i, x in enumerate(self._idlelist) if x == False]
+        #print "Anim {} at {:5g}".format(activeanimind, 1000*(time.time() - starttime))
+ 
+       # save times activated for each animation
         [self.timedata[i].append(1000*(time.time() - self.starttime)) for i, x in enumerate(self._idlelist) if x == False]
 
-        #self._led.buffer = [0] * 480
         self._led.pixheights = [-10000] * self._led.numLEDs
-        #print type(self._led.buffer)
         for ledcopy in self._ledcopies:
-            # self._led.buffer = map(ixor, self._led.buffer, ledcopy.buffer)
-            # use pixheights but assume all buffers same size
-            # print ledcopy.driver[0].pixheights
-            for pixind, pix in enumerate(ledcopy.driver[0].pixmap):
-                if self._led.pixheights[pix] == ledcopy.driver[0].pixheights[pixind]:
+            for pixind, pix in enumerate(ledcopy.pixmap):
+                if self._led.pixheights[pix] == ledcopy.pixheights[pixind]:
                     self._led._set_base(pix,
                             xortuple(self._led._get_base(pix), ledcopy._get_push(pixind)))
-                elif self._led.pixheights[pix] < ledcopy.driver[0].pixheights[pixind]:
+                elif self._led.pixheights[pix] < ledcopy.pixheights[pixind]:
                     self._led._set_base(pix, ledcopy._get_push(pixind))
-                    self._led.pixheights[pix] = ledcopy.driver[0].pixheights[pixind]
+                    self._led.pixheights[pix] = ledcopy.pixheights[pixind]
         self._step += 1
 
 
     def run(self, amt = 1, fps=None, sleep=None, max_steps = 0, untilComplete = True, max_cycles = 0, threaded = True, joinThread = False, callback=None):
-        # self.fps = fps
-        # self.untilComplete = untilComplete
         super(MasterAnimation, self).run(amt = 1, fps=fps, sleep=None, max_steps = max_steps, untilComplete = untilComplete, max_cycles = 0, threaded = threaded, joinThread = joinThread, callback=callback)
 #        while not self.animComplete:
 #            pass
