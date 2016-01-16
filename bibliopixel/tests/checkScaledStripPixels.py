@@ -11,6 +11,7 @@ return the same value.
 
 from bibliopixel import LEDStrip, LEDMatrix
 from bibliopixel.drivers.visualizer import DriverVisualizer
+from bibliopixel.drivers.LPD8806 import DriverLPD8806, ChannelOrder
 from bibliopixel.animation import BaseStripAnim, BaseMatrixAnim,  AnimationQueue
 from logging import DEBUG, INFO, WARNING, CRITICAL, ERROR
 from bibliopixel import log
@@ -29,8 +30,17 @@ class Dummy(BaseStripAnim):
 if __name__ == '__main__':
     pixelWidth = 10
     masterBrightness = 200
-    driver = DriverVisualizer(160, pixelSize=8, stayTop=True)
-    led = LEDStrip(driver, pixelWidth=pixelWidth,  masterBrightness=masterBrightness)
+    
+    # set up led with it's driver for the MasterAnimation
+    try: # to use visualizer but if fails
+        driver = DriverVisualizer(160, pixelSize=8, stayTop=True)
+        led = LEDStrip(driver, pixelWidth=pixelWidth,  masterBrightness=masterBrightness)
+    except:
+        # assume on my pi and connect to strip, however a process of visualizerUI.py will have
+        # been started and will fail
+        driver = DriverLPD8806(160, c_order = ChannelOrder.GRB, SPISpeed = 16)
+        led = LEDStrip(driver, pixelWidth=pixelWidth,  masterBrightness=masterBrightness)  
+
     dum = Dummy(led)
       
     print "masterBrightness is {}".format(dum._led.masterBrightness)  

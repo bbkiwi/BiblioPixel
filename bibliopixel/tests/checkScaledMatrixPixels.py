@@ -11,6 +11,7 @@ return the same value.
 
 from bibliopixel import LEDStrip, LEDMatrix
 from bibliopixel.drivers.visualizer import DriverVisualizer
+from bibliopixel.drivers.LPD8806 import DriverLPD8806, ChannelOrder
 from bibliopixel.animation import BaseStripAnim, BaseMatrixAnim,  AnimationQueue
 from logging import DEBUG, INFO, WARNING, CRITICAL, ERROR
 from bibliopixel import log
@@ -30,10 +31,20 @@ if __name__ == '__main__':
     pixelSize = (2,2)
     masterBrightness = 200
     
-    width = 8
-    height = 8
-    driver = DriverVisualizer(width=width, height=height, pixelSize=50, stayTop=True)
-    led = LEDMatrix(driver, pixelSize=pixelSize,  masterBrightness=masterBrightness)
+    # set up led with it's driver for the MasterAnimation
+    try: # to use visualizer but if fails
+        width = 8
+        height = 8
+        driver = DriverVisualizer(width=width, height=height, pixelSize=50, stayTop=True)
+        led = LEDMatrix(driver, pixelSize=pixelSize,  masterBrightness=masterBrightness)
+    except:
+        # assume on my pi and connect to strip, however a process of visualizerUI.py will have
+        # been started and will fail
+        width = 16
+        height = 10
+        driver = DriverLPD8806(160, c_order = ChannelOrder.GRB, SPISpeed = 16)
+        led = LEDMatrix(driver, width=width, height=height, pixelSize=pixelSize,  masterBrightness=masterBrightness)
+      
     ri = random.randint
     tex = [[(ri(0,255), ri(0,255), ri(0,255)) for i in range(width / pixelSize[0])] 
               for j in range(height / pixelSize[1]) ]
