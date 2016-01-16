@@ -9,7 +9,7 @@ setup(
     author_email='adam@maniacallabs.com',
     url='http://github.com/maniacallabs/bibliopixel/',
     license='MIT',
-    packages=['bibliopixel', 'bibliopixel.drivers'],
+    packages=['bibliopixel', 'bibliopixel.drivers', 'bibliopixel.tests'],
     classifiers = [
         'Development Status :: 5 - Production/Stable',
         'License :: OSI Approved :: MIT License',
