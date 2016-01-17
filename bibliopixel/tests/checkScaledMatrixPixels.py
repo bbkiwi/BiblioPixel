@@ -31,7 +31,7 @@ if __name__ == '__main__':
     pixelSize = (2,2)
     masterBrightness = 200
     
-    # set up led with it's driver for the MasterAnimation
+    # set up led
     try: # to use visualizer but if fails
         width = 8
         height = 8

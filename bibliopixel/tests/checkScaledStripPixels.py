@@ -31,7 +31,7 @@ if __name__ == '__main__':
     pixelWidth = 10
     masterBrightness = 200
     
-    # set up led with it's driver for the MasterAnimation
+    # set up led with it's driver
     try: # to use visualizer but if fails
         driver = DriverVisualizer(160, pixelSize=8, stayTop=True)
         led = LEDStrip(driver, pixelWidth=pixelWidth,  masterBrightness=masterBrightness)
